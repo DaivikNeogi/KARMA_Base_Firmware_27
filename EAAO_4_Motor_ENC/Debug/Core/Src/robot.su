@@ -1,0 +1,3 @@
+../Core/Src/robot.c:21:6:robot_init	64	static
+../Core/Src/robot.c:37:6:robot_process_rx	32	static
+../Core/Src/robot.c:67:6:robot_loop	64	static
