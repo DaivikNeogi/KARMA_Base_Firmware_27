@@ -12,7 +12,12 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "robot.h"
+#include "bno085_driver.h"
+#include "bno_port.h"
+#include "usbd_cdc_if.h"
+#include <stdio.h>
+#include <string.h>
+#include <math.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -39,8 +44,8 @@ TIM_HandleTypeDef htim4;
 TIM_HandleTypeDef htim5;
 
 /* USER CODE BEGIN PV */
-// This is defined here so both usbd_cdc_if.c and robot.c can access it
-volatile char rx_key = 0;
+BNO085 bno;
+BNO_Port bno_port;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -96,21 +101,70 @@ int main(void)
   MX_USB_DEVICE_Init();
   MX_I2C3_Init();
   /* USER CODE BEGIN 2 */
-  HAL_Delay(1000);
+  HAL_Delay(1000); /* Allow USB CDC and peripherals to initialize */
 
-  // Hands off all hardware mapping and logic to the application layer
-  robot_init();
+  /* 1. Initialize BNO Port interface (I2C3) */
+  BNO_Port_Init(&bno_port);
+
+  /* 2. Initialize BNO085 sensor driver */
+  if (BNO085_Init(&bno, &bno_port) == BNO_PORT_OK)
+  {
+    /* Enable Game Rotation Vector report at 20ms interval (50 Hz) */
+    BNO085_EnableGameRotation(&bno, 20000);
+  }
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-    robot_loop();
+  uint32_t last_tx_tick = 0;
+
+  while (1)
+  {
+    /* 1. Service BNO085: decode pending SHTP reports */
+    BNO085_Update(&bno);
+
+    /* 2. Send Game Rotation Vector over USB CDC at periodic interval (every 20ms = 50Hz) */
+    if (HAL_GetTick() - last_tx_tick >= 20)
+    {
+      last_tx_tick = HAL_GetTick();
+
+      BNO_Quaternion q;
+      if (BNO085_GetGameRotation(&bno, &q))
+      {
+        /* Compute Tait-Bryan Euler Angles (Roll, Pitch, Yaw in degrees) */
+        float sinr_cosp = 2.0f * (q.w * q.x + q.y * q.z);
+        float cosr_cosp = 1.0f - 2.0f * (q.x * q.x + q.y * q.y);
+        float roll = atan2f(sinr_cosp, cosr_cosp) * (180.0f / 3.141592653589793f);
+
+        float sinp = 2.0f * (q.w * q.y - q.z * q.x);
+        float pitch;
+        if (fabsf(sinp) >= 1.0f)
+          pitch = copysignf(90.0f, sinp);
+        else
+          pitch = asinf(sinp) * (180.0f / 3.141592653589793f);
+
+        float siny_cosp = 2.0f * (q.w * q.z + q.x * q.y);
+        float cosy_cosp = 1.0f - 2.0f * (q.y * q.y + q.z * q.z);
+        float yaw = atan2f(siny_cosp, cosy_cosp) * (180.0f / 3.141592653589793f);
+
+        /* Format USB CDC output packet */
+        char msg[128];
+        int len = snprintf(msg, sizeof(msg),
+          "GRV | Q: [%.4f, %.4f, %.4f, %.4f] | Yaw: %6.2f | Pitch: %6.2f | Roll: %6.2f\r\n",
+          q.w, q.x, q.y, q.z, yaw, pitch, roll);
+
+        if (len > 0)
+        {
+          CDC_Transmit_FS((uint8_t *)msg, (uint16_t)len);
+        }
+      }
+    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
-}
+
 
 /**
   * @brief System Clock Configuration

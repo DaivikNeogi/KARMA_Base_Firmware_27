@@ -264,10 +264,7 @@ static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
   USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
   USBD_CDC_ReceivePacket(&hUsbDeviceFS);
 
-  extern void robot_process_rx(uint8_t *buf, uint32_t len);
-  if (*Len > 0) {
-      robot_process_rx(Buf, *Len);
-  }
+  
 
   return (USBD_OK);
   /* USER CODE END 6 */
