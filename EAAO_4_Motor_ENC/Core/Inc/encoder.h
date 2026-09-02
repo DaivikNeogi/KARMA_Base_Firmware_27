@@ -8,7 +8,7 @@
 #ifndef ENCODER_H
 #define ENCODER_H
 
-#include "stm32f4xx_hal.h"
+#include "main.h"
 #include <stdint.h>
 
 void    encoder_init(TIM_HandleTypeDef *h0, TIM_HandleTypeDef *h1, TIM_HandleTypeDef *h2);

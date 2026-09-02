@@ -1,84 +1,280 @@
+/*
+ * robot.c
+ *
+ * Implementation of Autonomous 4-Wheel Robot Control
+ * Integrates:
+ *  - 3-Encoder Dead Wheel Odometry (TIM4, TIM3, TIM2)
+ *  - BNO085 IMU (Game Rotation Vector for Yaw, Linear Accel / Accel for x, y, z)
+ *  - 4x MD30C Motor Drivers (TIM5 CH1..CH4 PWM, GPIOB DIR)
+ *  - USB CDC JSON Bidirectional Telemetry and Command Parsing
+ */
+
 #include "robot.h"
 #include "main.h"
 #include "encoder.h"
 #include "motor.h"
+#include "bno085_driver.h"
+#include "bno_port.h"
 #include "usbd_cdc_if.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
+/* Hardware Timer Handles declared in main.c */
 extern TIM_HandleTypeDef htim2;
 extern TIM_HandleTypeDef htim3;
 extern TIM_HandleTypeDef htim4;
 extern TIM_HandleTypeDef htim5;
 
-static uint32_t s_last_tick_50ms;
-static char txbuf[128];
-static char rx_line_buffer[32];
-static uint8_t rx_line_idx = 0;
-static int16_t current_duty_percent = 0;
+/* BNO085 instances */
+static BNO085 s_bno;
+static BNO_Port s_bno_port;
+static bool s_bno_ready = false;
+
+/* State variables */
+static uint32_t s_last_telemetry_tick = 0;
+static uint32_t s_last_cmd_tick = 0;
+static bool s_motors_active = false;
+
+/* USB Buffers */
+static char s_tx_buf[256];
+static char s_rx_line[128];
+static uint8_t s_rx_idx = 0;
+
+/* Helper to parse an integer following a key in a JSON-like string */
+static bool parse_json_int(const char *str, const char *key, int *out_val)
+{
+    const char *p = strstr(str, key);
+    if (!p) return false;
+    
+    p += strlen(key);
+    while (*p && (*p == ' ' || *p == ':' || *p == '"')) p++;
+    
+    if (*p == '-' || (*p >= '0' && *p <= '9')) {
+        *out_val = atoi(p);
+        return true;
+    }
+    return false;
+}
 
 void robot_init(void)
 {
-    // 1. Encoders are on TIM4, TIM3, and TIM2
+    /* 1. Initialize 3 Dead Wheel Encoders (TIM4, TIM3, TIM2) */
     encoder_init(&htim4, &htim3, &htim2);
 
-    // 2. Motors are on TIM5 (CH1..CH4) with DIR on PB0, PB1, PB2, PB12
+    /* 2. Initialize 4x MD30C Motor Drivers (PWM on TIM5 CH1..CH4, DIR on GPIOB) */
     motor_config_t my_motors[4] = {
-        { TIM_CHANNEL_1, DIR1_GPIO_Port, DIR1_Pin },   // PWM: PA0 | DIR: PB0
-        { TIM_CHANNEL_2, DIR2_GPIO_Port, DIR2_Pin },   // PWM: PA1 | DIR: PB1
-        { TIM_CHANNEL_3, DIR3_GPIO_Port, DIR3_Pin },   // PWM: PA2 | DIR: PB2
-        { TIM_CHANNEL_4, DIR4_GPIO_Port, DIR4_Pin }    // PWM: PA3 | DIR: PB12
+        { TIM_CHANNEL_1, DIR1_GPIO_Port, DIR1_Pin },   /* M1: PA0 (TIM5_CH1), DIR: PB0 */
+        { TIM_CHANNEL_2, DIR2_GPIO_Port, DIR2_Pin },   /* M2: PA1 (TIM5_CH2), DIR: PB1 */
+        { TIM_CHANNEL_3, DIR3_GPIO_Port, DIR3_Pin },   /* M3: PA2 (TIM5_CH3), DIR: PB2 */
+        { TIM_CHANNEL_4, DIR4_GPIO_Port, DIR4_Pin }    /* M4: PA3 (TIM5_CH4), DIR: PB12 */
     };
     motor_init(&htim5, my_motors);
 
-    s_last_tick_50ms = HAL_GetTick();
+    /* 3. Initialize BNO085 IMU */
+    BNO_Port_Init(&s_bno_port);
+    if (BNO_Port_Detect())
+    {
+        if (BNO085_Init(&s_bno, &s_bno_port) == BNO_PORT_OK)
+        {
+            /* Drain initial startup and advertisement SHTP packets from BNO boot */
+            for (int i = 0; i < 15; i++) {
+                BNO085_Update(&s_bno);
+                HAL_Delay(10);
+            }
+
+            /* Enable Game Rotation Vector (50Hz / 20000us) for drift-free yaw */
+            BNO085_EnableGameRotation(&s_bno, 20000);
+            HAL_Delay(20);
+            /* Enable standard Rotation Vector as fallback */
+            BNO085_EnableRotation(&s_bno, 20000);
+            HAL_Delay(20);
+            /* Enable Linear Acceleration (50Hz / 20000us) for gravity-free x, y, z */
+            BNO085_EnableLinearAccel(&s_bno, 20000);
+            HAL_Delay(20);
+            /* Enable standard Acceleration as fallback */
+            BNO085_EnableAccel(&s_bno, 20000);
+            HAL_Delay(20);
+
+            s_bno_ready = true;
+        }
+    }
+
+    s_last_telemetry_tick = HAL_GetTick();
+    s_last_cmd_tick = HAL_GetTick();
 }
+
+void robot_set_motor(uint8_t motor_id, int16_t speed)
+{
+    motor_set(motor_id, speed);
+    if (speed != 0) s_motors_active = true;
+}
+
+void robot_set_all_motors(int16_t speed)
+{
+    for (int i = 0; i < 4; i++) {
+        motor_set(i, speed);
+    }
+    if (speed != 0) s_motors_active = true;
+}
+
+void robot_stop(void)
+{
+    motor_stop_all();
+    s_motors_active = false;
+}
+
+/*
+ * Parses incoming commands over USB CDC.
+ * Supports:
+ *   1. Individual JSON keys: {"m1": 500, "m2": 500, "m3": -500, "m4": -500}
+ *   2. Array format:         {"m": [500, 500, -500, -500]} or {"pwm": [500, 500, -500, -500]}
+ *   3. Broadcast speed:      {"speed": 300} or {"pwm": 300}
+ *   4. Emergency stop:       {"cmd": "stop"} or "stop"
+ *   5. Raw number input:     "50" (sets all motors to 50% / 500 speed)
+ */
+static void parse_command(const char *cmd)
+{
+    s_last_cmd_tick = HAL_GetTick();
+
+    /* Emergency stop check */
+    if (strstr(cmd, "stop") != NULL) {
+        robot_stop();
+        return;
+    }
+
+    /* 1. Check for individual motor keys "m1", "m2", "m3", "m4" */
+    int val;
+    bool found_individual = false;
+    if (parse_json_int(cmd, "\"m1\"", &val)) { robot_set_motor(0, (int16_t)val); found_individual = true; }
+    if (parse_json_int(cmd, "\"m2\"", &val)) { robot_set_motor(1, (int16_t)val); found_individual = true; }
+    if (parse_json_int(cmd, "\"m3\"", &val)) { robot_set_motor(2, (int16_t)val); found_individual = true; }
+    if (parse_json_int(cmd, "\"m4\"", &val)) { robot_set_motor(3, (int16_t)val); found_individual = true; }
+    if (found_individual) return;
+
+    /* 2. Check for array format: {"m": [...]} or {"pwm": [...]} */
+    const char *p = strstr(cmd, "\"m\":");
+    if (!p) p = strstr(cmd, "\"pwm\":");
+    if (p) {
+        const char *bracket = strchr(p, '[');
+        if (bracket) {
+            bracket++;
+            for (int i = 0; i < 4; i++) {
+                while (*bracket == ' ' || *bracket == ',') bracket++;
+                if (!*bracket || *bracket == ']') break;
+                int spd = atoi(bracket);
+                robot_set_motor(i, (int16_t)spd);
+                while (*bracket && *bracket != ',' && *bracket != ']') bracket++;
+                if (*bracket == ',') bracket++;
+            }
+            return;
+        } else {
+            /* Single broadcast value: {"pwm": 500} */
+            const char *col = strchr(p, ':');
+            if (col && parse_json_int(col - 5, "\"pwm\"", &val)) {
+                robot_set_all_motors((int16_t)val);
+                return;
+            }
+        }
+    }
+
+    /* 3. Check for broadcast speed: {"speed": 500} */
+    if (parse_json_int(cmd, "\"speed\"", &val)) {
+        robot_set_all_motors((int16_t)val);
+        return;
+    }
+
+    /* 4. Fallback: Raw numeric input (e.g. "50" or "-80" from serial terminal) */
+    const char *c = cmd;
+    while (*c == ' ' || *c == '\t') c++;
+    if (*c == '-' || (*c >= '0' && *c <= '9')) {
+        int raw_val = atoi(c);
+        /* If sent as percentage -100..100, scale to -1000..1000 */
+        if (raw_val >= -100 && raw_val <= 100) {
+            raw_val *= 10;
+        }
+        robot_set_all_motors((int16_t)raw_val);
+    }
+}
+
 void robot_process_rx(uint8_t *buf, uint32_t len)
 {
     for (uint32_t i = 0; i < len; i++) {
         char c = (char)buf[i];
 
         if (c == '\r' || c == '\n') {
-            if (rx_line_idx > 0) {
-                rx_line_buffer[rx_line_idx] = '\0';
-
-                // Parse integer from -100 to 100
-                int val = atoi(rx_line_buffer);
-                if (val > 100) val = 100;
-                if (val < -100) val = -100;
-
-                current_duty_percent = (int16_t)val;
-
-                // Scale percentage (-100..100) to motor speed (-1000..1000)
-                int16_t speed_scaled = current_duty_percent * 10;
-                for (int m = 0; m < 4; m++) {
-                    motor_set(m, speed_scaled);
-                }
-                rx_line_idx = 0;
+            if (s_rx_idx > 0) {
+                s_rx_line[s_rx_idx] = '\0';
+                parse_command(s_rx_line);
+                s_rx_idx = 0;
             }
-        } else if (rx_line_idx < (sizeof(rx_line_buffer) - 1)) {
-            // Append incoming character
-            rx_line_buffer[rx_line_idx++] = c;
+        } else if (s_rx_idx < (sizeof(s_rx_line) - 1)) {
+            s_rx_line[s_rx_idx++] = c;
         }
     }
 }
 
+static uint32_t s_last_feature_retry = 0;
+
 void robot_loop(void)
 {
-    if (HAL_GetTick() - s_last_tick_50ms >= 50) {
-        s_last_tick_50ms = HAL_GetTick();
+    /* 1. Process pending BNO085 SHTP packets */
+    if (s_bno_ready) {
+        for (int i = 0; i < 8; i++) {
+            if (BNO085_Update(&s_bno) != BNO_PORT_OK) break;
+        }
 
+        /* If no sensor reports have arrived yet, re-send SetFeature requests every 250ms */
+        if (s_bno.diag.rx_reports == 0 && (HAL_GetTick() - s_last_feature_retry >= 250)) {
+            s_last_feature_retry = HAL_GetTick();
+            BNO085_EnableGameRotation(&s_bno, 20000);
+            BNO085_EnableRotation(&s_bno, 20000);
+            BNO085_EnableLinearAccel(&s_bno, 20000);
+            BNO085_EnableAccel(&s_bno, 20000);
+        }
+    }
+
+    /* 2. Safety Watchdog: Auto-stop motors if communication drops */
+#if (MOTOR_WATCHDOG_TIMEOUT > 0)
+    if (s_motors_active && (HAL_GetTick() - s_last_cmd_tick >= MOTOR_WATCHDOG_TIMEOUT)) {
+        robot_stop();
+    }
+#endif
+
+    /* 3. Periodic JSON Telemetry Output (50 Hz / 20 ms) */
+    if (HAL_GetTick() - s_last_telemetry_tick >= TELEMETRY_INTERVAL_MS) {
+        s_last_telemetry_tick = HAL_GetTick();
+
+        /* Update 3 dead wheel encoder counts */
         encoder_update();
+        int32_t e1 = encoder_get_count(0);
+        int32_t e2 = encoder_get_count(1);
+        int32_t e3 = encoder_get_count(2);
 
-        // Print active PWM % alongside total count and instantaneous delta
-        int elen = snprintf(txbuf, sizeof(txbuf),
-            "PWM:%d%% | E1:[Tot:%ld, D:%d] | E2:[Tot:%ld, D:%d] | E3:[Tot:%ld, D:%d]\r\n",
-            (int)current_duty_percent,
-            (long)encoder_get_count(0), (int)encoder_get_delta(0),
-            (long)encoder_get_count(1), (int)encoder_get_delta(1),
-            (long)encoder_get_count(2), (int)encoder_get_delta(2));
+        /* Get BNO085 Heading (Yaw in degrees) */
+        BNO_Quaternion q;
+        float yaw = 0.0f;
+        if (BNO085_GetGameRotation(&s_bno, &q) || BNO085_GetRotation(&s_bno, &q)) {
+            yaw = BNO085_GetEulerYaw(&q);
+        }
 
-        CDC_Transmit_FS((uint8_t*)txbuf, elen);
+        /* Get BNO085 Acceleration (x, y, z in m/s^2) */
+        BNO_Vector3 accel = {0.0f, 0.0f, 0.0f};
+        if (!BNO085_GetLinearAccel(&s_bno, &accel)) {
+            BNO085_GetAccel(&s_bno, &accel);
+        }
+
+        /* Clean, streamlined JSON telemetry */
+        int len = snprintf(s_tx_buf, sizeof(s_tx_buf),
+            "{\"yaw\":%.2f,\"x\":%.2f,\"y\":%.2f,\"z\":%.2f,\"e1\":%ld,\"e2\":%ld,\"e3\":%ld,\"bno_ok\":%d}\r\n",
+            yaw,
+            accel.x, accel.y, accel.z,
+            (long)e1, (long)e2, (long)e3,
+            s_bno_ready ? 1 : 0);
+
+        if (len > 0) {
+            CDC_Transmit_FS((uint8_t *)s_tx_buf, (uint16_t)len);
+        }
     }
 }

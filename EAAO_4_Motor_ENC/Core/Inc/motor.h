@@ -8,7 +8,7 @@
 #ifndef MOTOR_H
 #define MOTOR_H
 
-#include "stm32f4xx_hal.h"
+#include "main.h"
 #include <stdint.h>
 
 // Configuration struct to keep motor driver hardware-agnostic

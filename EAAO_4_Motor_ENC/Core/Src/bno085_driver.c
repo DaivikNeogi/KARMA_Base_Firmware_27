@@ -1,5 +1,6 @@
 #include "bno085_driver.h"
 #include <string.h>
+#include <math.h>
 
 /* ============================================================
  * Internal constants
@@ -8,6 +9,7 @@
 #define SHTP_HEADER_SIZE           4
 #define SH2_REPORT_BASE_TIMESTAMP  0xFB
 #define SH2_REPORT_TIMESTAMP_REBASE 0xF3
+#define SH2_REPORT_COMMAND_RESPONSE 0xF1
 
 /* ============================================================
  * Little-endian decoding helpers
@@ -24,13 +26,14 @@ static inline int16_t read_i16(const uint8_t *p)
 }
 
 /* ============================================================
- * SHTP sequence number
+ * SHTP sequence number (Host-to-Sensor TX)
  * ============================================================ */
 
 static uint8_t get_next_sequence(BNO085 *dev, uint8_t channel)
 {
-    uint8_t sequence = dev->sequence[channel];
-    dev->sequence[channel]++;
+    if (channel >= 6) return 0;
+    uint8_t sequence = dev->tx_sequence[channel];
+    dev->tx_sequence[channel]++;
     return sequence;
 }
 
@@ -48,7 +51,7 @@ static BNO_PortStatus BNO085_SendSHTP(
     uint8_t packet[BNO085_RX_BUFFER_SIZE];
     uint16_t total_length;
 
-    if (payload == NULL)
+    if (dev == NULL || payload == NULL || dev->port.write == NULL)
         return BNO_PORT_ERROR;
 
     total_length = SHTP_HEADER_SIZE + payload_length;
@@ -56,7 +59,7 @@ static BNO_PortStatus BNO085_SendSHTP(
     if (total_length > sizeof(packet))
         return BNO_PORT_ERROR;
 
-    /* SHTP header */
+    /* SHTP header: Length LSB, Length MSB (bit 15=0), Channel, Sequence */
     packet[0] = (uint8_t)(total_length & 0xFF);
     packet[1] = (uint8_t)((total_length >> 8) & 0x7F);
     packet[2] = channel;
@@ -66,11 +69,27 @@ static BNO_PortStatus BNO085_SendSHTP(
     memcpy(&packet[4], payload, payload_length);
 
     /* Hardware transmit */
-    return dev->port.write(packet, total_length);
+    BNO_PortStatus status = dev->port.write(packet, total_length);
+    if (status == BNO_PORT_OK) {
+        dev->diag.tx_packets++;
+    } else {
+        dev->diag.tx_errors++;
+    }
+    return status;
 }
 
 /* ============================================================
- * Send Set Feature Command (SHTP Channel 2)
+ * Soft Reset (SHTP Channel 1 - Executable)
+ * ============================================================ */
+
+BNO_PortStatus BNO085_SoftReset(BNO085 *dev)
+{
+    uint8_t reset_cmd = 0x01; /* Reset request */
+    return BNO085_SendSHTP(dev, BNO_CHANNEL_EXECUTABLE, &reset_cmd, 1);
+}
+
+/* ============================================================
+ * Send Set Feature Command (SHTP Channel 2 - Control)
  * ============================================================ */
 
 static BNO_PortStatus BNO085_SetFeature(
@@ -110,6 +129,12 @@ static BNO_PortStatus BNO085_SetFeature(
 }
 
 /* ============================================================
+ * Internal SHTP packet reader forward declaration
+ * ============================================================ */
+
+static BNO_PortStatus read_shtp_packet(BNO085 *dev);
+
+/* ============================================================
  * Public initialization
  * ============================================================ */
 
@@ -120,17 +145,36 @@ BNO_PortStatus BNO085_Init(BNO085 *dev, const BNO_Port *port)
 
     memset(dev, 0, sizeof(BNO085));
     dev->port = *port;
+    dev->diag.i2c_addr = BNO_Port_GetAddress();
 
-    /* Hardware reset if available */
+    /* Hardware reset if pin is configured */
     if (dev->port.reset != NULL)
     {
         dev->port.reset();
     }
 
-    /* Wait for BNO085 firmware boot */
+    /* Wait for BNO085 initial boot */
     if (dev->port.delay_ms != NULL)
     {
         dev->port.delay_ms(300);
+    }
+
+    /* Send software reset */
+    BNO085_SoftReset(dev);
+
+    if (dev->port.delay_ms != NULL)
+    {
+        dev->port.delay_ms(200);
+    }
+
+    /* Wait and drain initial startup & advertisement packets from FIFO */
+    for (int i = 0; i < 30; i++)
+    {
+        read_shtp_packet(dev);
+        if (dev->port.delay_ms != NULL)
+        {
+            dev->port.delay_ms(10);
+        }
     }
 
     dev->initialized = true;
@@ -226,6 +270,9 @@ static uint16_t parse_sensor_event(BNO085 *dev, const uint8_t *data, uint16_t re
     case SH2_REPORT_TIMESTAMP_REBASE:
         return (remaining >= 5) ? 5 : 0;
 
+    case SH2_REPORT_COMMAND_RESPONSE:
+        return (remaining >= 16) ? 16 : (remaining >= 4 ? 4 : 0);
+
     case BNO_REPORT_ACCEL:
         if (remaining < 10) return 0;
         {
@@ -236,6 +283,7 @@ static uint16_t parse_sensor_event(BNO085 *dev, const uint8_t *data, uint16_t re
             dev->data.accel.y = (float)y / 256.0f;
             dev->data.accel.z = (float)z / 256.0f;
             dev->data.accel_valid = true;
+            dev->diag.rx_reports++;
         }
         return 10;
 
@@ -249,6 +297,7 @@ static uint16_t parse_sensor_event(BNO085 *dev, const uint8_t *data, uint16_t re
             dev->data.gyro.y = (float)y / 512.0f;
             dev->data.gyro.z = (float)z / 512.0f;
             dev->data.gyro_valid = true;
+            dev->diag.rx_reports++;
         }
         return 10;
 
@@ -262,6 +311,7 @@ static uint16_t parse_sensor_event(BNO085 *dev, const uint8_t *data, uint16_t re
             dev->data.mag.y = (float)y / 16.0f;
             dev->data.mag.z = (float)z / 16.0f;
             dev->data.mag_valid = true;
+            dev->diag.rx_reports++;
         }
         return 10;
 
@@ -275,6 +325,7 @@ static uint16_t parse_sensor_event(BNO085 *dev, const uint8_t *data, uint16_t re
             dev->data.linear_accel.y = (float)y / 256.0f;
             dev->data.linear_accel.z = (float)z / 256.0f;
             dev->data.linear_accel_valid = true;
+            dev->diag.rx_reports++;
         }
         return 10;
 
@@ -288,6 +339,7 @@ static uint16_t parse_sensor_event(BNO085 *dev, const uint8_t *data, uint16_t re
             dev->data.gravity.y = (float)y / 256.0f;
             dev->data.gravity.z = (float)z / 256.0f;
             dev->data.gravity_valid = true;
+            dev->diag.rx_reports++;
         }
         return 10;
 
@@ -303,6 +355,7 @@ static uint16_t parse_sensor_event(BNO085 *dev, const uint8_t *data, uint16_t re
             dev->data.rotation.z = (float)z / 16384.0f;
             dev->data.rotation.w = (float)w / 16384.0f;
             dev->data.rotation_valid = true;
+            dev->diag.rx_reports++;
         }
         return 14;
 
@@ -318,11 +371,12 @@ static uint16_t parse_sensor_event(BNO085 *dev, const uint8_t *data, uint16_t re
             dev->data.game_rotation.z = (float)z / 16384.0f;
             dev->data.game_rotation.w = (float)w / 16384.0f;
             dev->data.game_rotation_valid = true;
+            dev->diag.rx_reports++;
         }
         return 12;
 
     default:
-        /* Unrecognized report ID, stop to avoid parsing out-of-sync bytes */
+        /* Unknown report ID: return 0 so parser can advance and resync */
         return 0;
     }
 }
@@ -338,8 +392,14 @@ static void parse_reports(BNO085 *dev, const uint8_t *data, uint16_t length)
     {
         uint16_t consumed = parse_sensor_event(dev, &data[offset], length - offset);
         if (consumed == 0)
-            break;
-        offset += consumed;
+        {
+            /* Skip 1 byte to find next valid report ID */
+            offset++;
+        }
+        else
+        {
+            offset += consumed;
+        }
     }
 }
 
@@ -349,43 +409,46 @@ static void parse_reports(BNO085 *dev, const uint8_t *data, uint16_t length)
 
 static BNO_PortStatus read_shtp_packet(BNO085 *dev)
 {
-    uint8_t header[4];
+    /* Single continuous I2C read: Header (4 bytes) + Payload (up to 60 bytes) */
+    uint8_t buffer[64];
 
-    /* Read SHTP 4-byte header */
-    if (dev->port.read(header, 4) != BNO_PORT_OK)
+    if (dev->port.read(buffer, sizeof(buffer)) != BNO_PORT_OK)
     {
+        dev->diag.rx_errors++;
         return BNO_PORT_ERROR;
     }
 
-    uint16_t packet_length = ((uint16_t)header[0]) | (((uint16_t)(header[1] & 0x7F)) << 8);
+    memcpy(dev->diag.last_header, buffer, 4);
 
-    if (packet_length == 0 || packet_length == 0x7FFF)
+    uint16_t packet_length = ((uint16_t)buffer[0]) | (((uint16_t)(buffer[1] & 0x7F)) << 8);
+    dev->diag.last_packet_len = packet_length;
+    dev->diag.last_channel = buffer[2];
+
+    /* 0, 0x7FFF, or 0xFFFF indicate no data ready or bus idle */
+    if (packet_length == 0 || packet_length == 0x7FFF || packet_length == 0xFFFF)
         return BNO_PORT_OK;
 
     if (packet_length < 4)
         return BNO_PORT_ERROR;
 
     uint16_t payload_length = packet_length - 4;
-    if (payload_length > BNO085_RX_BUFFER_SIZE)
+    if (payload_length > (sizeof(buffer) - 4))
     {
-        payload_length = BNO085_RX_BUFFER_SIZE;
+        payload_length = sizeof(buffer) - 4;
     }
 
-    uint8_t channel = header[2];
-    dev->sequence[channel] = header[3];
-
-    if (payload_length > 0)
+    uint8_t channel = buffer[2];
+    if (channel < 6)
     {
-        if (dev->port.read(dev->rx_buffer, payload_length) != BNO_PORT_OK)
-        {
-            return BNO_PORT_ERROR;
-        }
+        dev->rx_sequence[channel] = buffer[3];
+    }
 
-        /* Input reports arrive on Channel 3 or Channel 4 */
-        if (channel == BNO_CHANNEL_INPUT || channel == BNO_CHANNEL_WAKE_INPUT)
-        {
-            parse_reports(dev, dev->rx_buffer, payload_length);
-        }
+    dev->diag.rx_packets++;
+
+    /* Input reports arrive on Channel 3, Channel 4, or Channel 5 */
+    if (channel == BNO_CHANNEL_INPUT || channel == BNO_CHANNEL_WAKE_INPUT || channel == BNO_CHANNEL_GYRO_ROTATION)
+    {
+        parse_reports(dev, &buffer[4], payload_length);
     }
 
     return BNO_PORT_OK;
@@ -471,4 +534,15 @@ bool BNO085_GetGameRotation(BNO085 *dev, BNO_Quaternion *q)
 
     *q = dev->data.game_rotation;
     return true;
-}
+}
+
+float BNO085_GetEulerYaw(const BNO_Quaternion *q)
+{
+    if (q == NULL)
+        return 0.0f;
+
+    float siny_cosp = 2.0f * (q->w * q->z + q->x * q->y);
+    float cosy_cosp = 1.0f - 2.0f * (q->y * q->y + q->z * q->z);
+    float yaw = atan2f(siny_cosp, cosy_cosp) * (180.0f / 3.141592653589793f);
+    return yaw;
+}

@@ -64,8 +64,8 @@ all: main-build
 main-build: EAAO_4_Motor_ENC.elf secondary-outputs
 
 # Tool invocations
-EAAO_4_Motor_ENC.elf EAAO_4_Motor_ENC.map: $(OBJS) $(USER_OBJS) C:\Users\daivi\OneDrive\Desktop\rcupws\EAAO_4_Motor_ENC\STM32F411CEUX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "EAAO_4_Motor_ENC.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\daivi\OneDrive\Desktop\rcupws\EAAO_4_Motor_ENC\STM32F411CEUX_FLASH.ld" --specs=nosys.specs -Wl,-Map="EAAO_4_Motor_ENC.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+EAAO_4_Motor_ENC.elf EAAO_4_Motor_ENC.map: $(OBJS) $(USER_OBJS) C:\Users\daivi\OneDrive\Desktop\KARMA_Base_Firmware_27-main\EAAO_4_Motor_ENC\STM32F411CEUX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "EAAO_4_Motor_ENC.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\daivi\OneDrive\Desktop\KARMA_Base_Firmware_27-main\EAAO_4_Motor_ENC\STM32F411CEUX_FLASH.ld" --specs=nosys.specs -Wl,-Map="EAAO_4_Motor_ENC.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -u _printf_float -u _scanf_float -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 

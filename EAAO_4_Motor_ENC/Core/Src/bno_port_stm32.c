@@ -3,7 +3,36 @@
 
 extern I2C_HandleTypeDef hi2c3;
 
-#define BNO085_I2C_ADDRESS    (0x4A << 1)
+/* Default to 0x4A (shifted left for HAL 8-bit format = 0x94) */
+static uint16_t s_bno_i2c_address = (0x4A << 1);
+static bool s_bno_detected = false;
+
+bool BNO_Port_Detect(void)
+{
+    /* Check standard address 0x4A (ADDR / DI0 = GND or default) */
+    if (HAL_I2C_IsDeviceReady(&hi2c3, (0x4A << 1), 3, 50) == HAL_OK)
+    {
+        s_bno_i2c_address = (0x4A << 1);
+        s_bno_detected = true;
+        return true;
+    }
+
+    /* Check alternate address 0x4B (ADDR / DI0 = 3.3V / HIGH) */
+    if (HAL_I2C_IsDeviceReady(&hi2c3, (0x4B << 1), 3, 50) == HAL_OK)
+    {
+        s_bno_i2c_address = (0x4B << 1);
+        s_bno_detected = true;
+        return true;
+    }
+
+    s_bno_detected = false;
+    return false;
+}
+
+uint8_t BNO_Port_GetAddress(void)
+{
+    return (uint8_t)(s_bno_i2c_address >> 1);
+}
 
 static BNO_PortStatus STM32_BNO_Write(const uint8_t *data,
                                       size_t length)
@@ -12,7 +41,7 @@ static BNO_PortStatus STM32_BNO_Write(const uint8_t *data,
 
     status = HAL_I2C_Master_Transmit(
         &hi2c3,
-        BNO085_I2C_ADDRESS,
+        s_bno_i2c_address,
         (uint8_t *)data,
         length,
         100
@@ -23,7 +52,6 @@ static BNO_PortStatus STM32_BNO_Write(const uint8_t *data,
            : BNO_PORT_ERROR;
 }
 
-
 static BNO_PortStatus STM32_BNO_Read(uint8_t *data,
                                      size_t length)
 {
@@ -31,7 +59,7 @@ static BNO_PortStatus STM32_BNO_Read(uint8_t *data,
 
     status = HAL_I2C_Master_Receive(
         &hi2c3,
-        BNO085_I2C_ADDRESS,
+        s_bno_i2c_address,
         data,
         length,
         100
@@ -42,20 +70,15 @@ static BNO_PortStatus STM32_BNO_Read(uint8_t *data,
            : BNO_PORT_ERROR;
 }
 
-
 static void STM32_BNO_Delay(uint32_t ms)
 {
     HAL_Delay(ms);
 }
 
-
 static void STM32_BNO_Reset(void)
 {
-    /*
-     * Your actual BNO085 reset GPIO code goes here.
-     */
+    /* Reset line not connected by default */
 }
-
 
 void BNO_Port_Init(BNO_Port *port)
 {

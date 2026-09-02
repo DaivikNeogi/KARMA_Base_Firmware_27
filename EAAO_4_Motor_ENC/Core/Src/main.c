@@ -12,12 +12,10 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "bno085_driver.h"
-#include "bno_port.h"
+#include "robot.h"
 #include "usbd_cdc_if.h"
 #include <stdio.h>
 #include <string.h>
-#include <math.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -44,8 +42,7 @@ TIM_HandleTypeDef htim4;
 TIM_HandleTypeDef htim5;
 
 /* USER CODE BEGIN PV */
-BNO085 bno;
-BNO_Port bno_port;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -103,67 +100,22 @@ int main(void)
   /* USER CODE BEGIN 2 */
   HAL_Delay(1000); /* Allow USB CDC and peripherals to initialize */
 
-  /* 1. Initialize BNO Port interface (I2C3) */
-  BNO_Port_Init(&bno_port);
-
-  /* 2. Initialize BNO085 sensor driver */
-  if (BNO085_Init(&bno, &bno_port) == BNO_PORT_OK)
-  {
-    /* Enable Game Rotation Vector report at 20ms interval (50 Hz) */
-    BNO085_EnableGameRotation(&bno, 20000);
-  }
+  /* Initialize autonomous robot subsystems (Encoders, MD30C Motors, BNO085) */
+  robot_init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  uint32_t last_tx_tick = 0;
-
   while (1)
   {
-    /* 1. Service BNO085: decode pending SHTP reports */
-    BNO085_Update(&bno);
-
-    /* 2. Send Game Rotation Vector over USB CDC at periodic interval (every 20ms = 50Hz) */
-    if (HAL_GetTick() - last_tx_tick >= 20)
-    {
-      last_tx_tick = HAL_GetTick();
-
-      BNO_Quaternion q;
-      if (BNO085_GetGameRotation(&bno, &q))
-      {
-        /* Compute Tait-Bryan Euler Angles (Roll, Pitch, Yaw in degrees) */
-        float sinr_cosp = 2.0f * (q.w * q.x + q.y * q.z);
-        float cosr_cosp = 1.0f - 2.0f * (q.x * q.x + q.y * q.y);
-        float roll = atan2f(sinr_cosp, cosr_cosp) * (180.0f / 3.141592653589793f);
-
-        float sinp = 2.0f * (q.w * q.y - q.z * q.x);
-        float pitch;
-        if (fabsf(sinp) >= 1.0f)
-          pitch = copysignf(90.0f, sinp);
-        else
-          pitch = asinf(sinp) * (180.0f / 3.141592653589793f);
-
-        float siny_cosp = 2.0f * (q.w * q.z + q.x * q.y);
-        float cosy_cosp = 1.0f - 2.0f * (q.y * q.y + q.z * q.z);
-        float yaw = atan2f(siny_cosp, cosy_cosp) * (180.0f / 3.141592653589793f);
-
-        /* Format USB CDC output packet */
-        char msg[128];
-        int len = snprintf(msg, sizeof(msg),
-          "GRV | Q: [%.4f, %.4f, %.4f, %.4f] | Yaw: %6.2f | Pitch: %6.2f | Roll: %6.2f\r\n",
-          q.w, q.x, q.y, q.z, yaw, pitch, roll);
-
-        if (len > 0)
-        {
-          CDC_Transmit_FS((uint8_t *)msg, (uint16_t)len);
-        }
-      }
-    }
+    /* Service odometry, IMU, motor safety, and USB CDC JSON telemetry */
+    robot_loop();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
+}
 
 
 /**
@@ -268,7 +220,7 @@ static void MX_TIM2_Init(void)
   htim2.Instance = TIM2;
   htim2.Init.Prescaler = 0;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 6553;
+  htim2.Init.Period = 65535;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   sConfig.EncoderMode = TIM_ENCODERMODE_TI12;
@@ -414,9 +366,9 @@ static void MX_TIM5_Init(void)
 
   /* USER CODE END TIM5_Init 1 */
   htim5.Instance = TIM5;
-  htim5.Init.Prescaler = 0;
+  htim5.Init.Prescaler = 83;
   htim5.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim5.Init.Period = 4294967295;
+  htim5.Init.Period = 999;
   htim5.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim5.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim5) != HAL_OK)

@@ -124,6 +124,19 @@ typedef struct
 
 } BNO085_Data;
 
+typedef struct
+{
+    uint32_t rx_packets;      /* Total valid SHTP packets received */
+    uint32_t rx_reports;      /* Total sensor reports parsed */
+    uint32_t tx_packets;      /* Total SHTP packets transmitted */
+    uint32_t tx_errors;       /* I2C transmit failures */
+    uint32_t rx_errors;       /* I2C receive failures */
+    uint16_t last_packet_len; /* Length of last received packet */
+    uint8_t  last_channel;    /* Channel of last received packet */
+    uint8_t  last_header[4];  /* Last 4-byte header received */
+    uint8_t  i2c_addr;        /* Active I2C address (0x4A or 0x4B) */
+} BNO085_Diag;
+
 
 /* ============================================================
  * Driver object
@@ -134,10 +147,11 @@ typedef struct
     BNO_Port port;
 
     BNO085_Data data;
+    BNO085_Diag diag;
 
     uint8_t rx_buffer[BNO085_RX_BUFFER_SIZE];
-
-    uint8_t sequence[6];
+    uint8_t tx_sequence[6];
+    uint8_t rx_sequence[6];
 
     volatile bool data_ready;
 
@@ -147,12 +161,16 @@ typedef struct
 
 
 /* ============================================================
- * Initialization
+ * Initialization & Reset
  * ============================================================ */
 
 BNO_PortStatus BNO085_Init(
     BNO085 *dev,
     const BNO_Port *port
+);
+
+BNO_PortStatus BNO085_SoftReset(
+    BNO085 *dev
 );
 
 
@@ -254,6 +272,12 @@ bool BNO085_GetMag(
 );
 
 
+bool BNO085_GetLinearAccel(
+    BNO085 *dev,
+    BNO_Vector3 *linear_accel
+);
+
+
 bool BNO085_GetGravity(
     BNO085 *dev,
     BNO_Vector3 *gravity
@@ -269,6 +293,11 @@ bool BNO085_GetRotation(
 bool BNO085_GetGameRotation(
     BNO085 *dev,
     BNO_Quaternion *q
+);
+
+
+float BNO085_GetEulerYaw(
+    const BNO_Quaternion *q
 );
 
 

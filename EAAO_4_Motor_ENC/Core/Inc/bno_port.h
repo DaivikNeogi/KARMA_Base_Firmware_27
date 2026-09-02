@@ -44,7 +44,11 @@ typedef struct
 
 
 
+#include <stdbool.h>
+
 void BNO_Port_Init(BNO_Port *port);
+bool BNO_Port_Detect(void);
+uint8_t BNO_Port_GetAddress(void);
 
 
 /* -------------------------------------------------------------------------- */
