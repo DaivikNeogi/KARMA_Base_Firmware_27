@@ -4,8 +4,8 @@
  * Implementation of Autonomous 4-Wheel Robot Control
  * Integrates:
  *  - 3-Encoder Dead Wheel Odometry (TIM4, TIM3, TIM2)
- *  - BNO085 IMU (Game Rotation Vector for Yaw, Linear Accel / Accel for x, y,
- * z)
+ *  - BNO085 IMU (Game Rotation Vector for Yaw, Gyro for Angular Velocity,
+ * Linear Accel / Accel for x, y)
  *  - 4x MD30C Motor Drivers (TIM5 CH1..CH4 PWM, GPIOB DIR)
  *  - USB CDC JSON Bidirectional Telemetry and Command Parsing
  */
@@ -40,7 +40,7 @@ static bool s_motors_active = false;
 static int16_t s_motor_pwm[4] = {0, 0, 0, 0};
 
 /* USB Buffers */
-static char s_tx_buf[256];
+static char s_tx_buf[384];
 static char s_ack_buf[128];
 static volatile bool s_pending_ack = false;
 static char s_rx_line[128];
@@ -70,12 +70,12 @@ void robot_init(void) {
   /* 2. Initialize 4x MD30C Motor Drivers (PWM on TIM5 CH1..CH4, DIR on GPIOB)
    */
   motor_config_t my_motors[4] = {
-      {TIM_CHANNEL_1, DIR3_GPIO_Port,
-       DIR3_Pin}, /* M1: PA0 (TIM5_CH1), DIR: PB2 (swapped to match wiring) */
+      {TIM_CHANNEL_1, DIR1_GPIO_Port,
+       DIR1_Pin}, /* M1: PA0 (TIM5_CH1), DIR: PB0 */
       {TIM_CHANNEL_2, DIR2_GPIO_Port,
        DIR2_Pin}, /* M2: PA1 (TIM5_CH2), DIR: PB1 */
-      {TIM_CHANNEL_3, DIR1_GPIO_Port,
-       DIR1_Pin}, /* M3: PA2 (TIM5_CH3), DIR: PB0 (swapped to match wiring) */
+      {TIM_CHANNEL_3, DIR3_GPIO_Port,
+       DIR3_Pin}, /* M3: PA2 (TIM5_CH3), DIR: PB2 */
       {TIM_CHANNEL_4, DIR4_GPIO_Port,
        DIR4_Pin} /* M4: PA3 (TIM5_CH4), DIR: PB12 */
   };
@@ -97,11 +97,15 @@ void robot_init(void) {
       /* Enable standard Rotation Vector as fallback */
       BNO085_EnableRotation(&s_bno, 20000);
       HAL_Delay(20);
-      /* Enable Linear Acceleration (50Hz / 20000us) for gravity-free x, y, z */
+      /* Enable Linear Acceleration (50Hz / 20000us) for gravity-free x, y */
       BNO085_EnableLinearAccel(&s_bno, 20000);
       HAL_Delay(20);
       /* Enable standard Acceleration as fallback */
       BNO085_EnableAccel(&s_bno, 20000);
+      HAL_Delay(20);
+      /* Enable Calibrated Gyroscope (50Hz / 20000us) for angular velocity x, y
+       */
+      BNO085_EnableGyro(&s_bno, 20000);
       HAL_Delay(20);
 
       s_bno_ready = true;
@@ -303,6 +307,7 @@ void robot_loop(void) {
       BNO085_EnableRotation(&s_bno, 20000);
       BNO085_EnableLinearAccel(&s_bno, 20000);
       BNO085_EnableAccel(&s_bno, 20000);
+      BNO085_EnableGyro(&s_bno, 20000);
     }
   }
 
@@ -340,18 +345,22 @@ void robot_loop(void) {
       yaw = BNO085_GetEulerYaw(&q);
     }
 
-    /* Get BNO085 Acceleration (x, y, z in m/s^2) */
+    /* Get BNO085 Acceleration (x, y in m/s^2) - No Z axis */
     BNO_Vector3 accel = {0.0f, 0.0f, 0.0f};
     if (!BNO085_GetLinearAccel(&s_bno, &accel)) {
       BNO085_GetAccel(&s_bno, &accel);
     }
 
-    /* Clean, streamlined JSON telemetry with motor PWM */
+    /* Get BNO085 Angular Velocity (x, y in rad/s) - No Z axis */
+    BNO_Vector3 gyro = {0.0f, 0.0f, 0.0f};
+    BNO085_GetGyro(&s_bno, &gyro);
+
+    /* Compact, abbreviated JSON telemetry (no z axis, no ver) */
     int len = snprintf(
         s_tx_buf, sizeof(s_tx_buf),
-        "{\"ver\":\"1.1\",\"yaw\":%.2f,\"x\":%.2f,\"y\":%.2f,\"z\":%.2f,\"e1\":%ld,\"e2\":%ld,"
-        "\"e3\":%ld,\"bno_ok\":%d,\"pwm\":[%d,%d,%d,%d]}\r\n",
-        yaw, accel.x, accel.y, accel.z, (long)e1, (long)e2, (long)e3,
+        "{\"yaw\":%.2f,\"ax\":%.2f,\"ay\":%.2f,\"wx\":%.2f,\"wy\":%.2f,"
+        "\"e1\":%ld,\"e2\":%ld,\"e3\":%ld,\"ok\":%d,\"pwm\":[%d,%d,%d,%d]}\r\n",
+        yaw, accel.x, accel.y, gyro.x, gyro.y, (long)e1, (long)e2, (long)e3,
         s_bno_ready ? 1 : 0, s_motor_pwm[0], s_motor_pwm[1], s_motor_pwm[2],
         s_motor_pwm[3]);
 

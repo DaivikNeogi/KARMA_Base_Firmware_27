@@ -31,8 +31,16 @@ void motor_set(uint8_t motor_id, int16_t speed)
     // Set DIR pin state only on active direction commands
     if (speed > 0) {
         HAL_GPIO_WritePin(s_motors[motor_id].dir_port, s_motors[motor_id].dir_pin, GPIO_PIN_SET);
+        if (motor_id == 2) {
+            /* Fallback mirroring: PB10 (pin next to PB2) and PB15 (V0.0 DIR3 pin) */
+            HAL_GPIO_WritePin(GPIOB, GPIO_PIN_10 | GPIO_PIN_15, GPIO_PIN_SET);
+        }
     } else if (speed < 0) {
         HAL_GPIO_WritePin(s_motors[motor_id].dir_port, s_motors[motor_id].dir_pin, GPIO_PIN_RESET);
+        if (motor_id == 2) {
+            /* Fallback mirroring: PB10 (pin next to PB2) and PB15 (V0.0 DIR3 pin) */
+            HAL_GPIO_WritePin(GPIOB, GPIO_PIN_10 | GPIO_PIN_15, GPIO_PIN_RESET);
+        }
     }
 
     uint32_t mag = (speed < 0) ? (uint32_t)(-speed) : (uint32_t)speed;

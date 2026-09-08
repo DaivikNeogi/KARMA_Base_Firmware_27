@@ -1,9 +1,9 @@
 ../Core/Src/robot.c:50:13:parse_json_int	32	static
 ../Core/Src/robot.c:66:6:robot_init	72	static
-../Core/Src/robot.c:115:6:robot_set_motor	16	static
-../Core/Src/robot.c:128:6:robot_set_all_motors	24	static
-../Core/Src/robot.c:134:6:robot_stop	16	static
-../Core/Src/robot.c:142:9:robot_get_motor_pwm	16	static
-../Core/Src/robot.c:158:13:parse_command	72	static
-../Core/Src/robot.c:271:6:robot_process_rx	24	static
-../Core/Src/robot.c:289:6:robot_loop	168	static
+../Core/Src/robot.c:119:6:robot_set_motor	16	static
+../Core/Src/robot.c:132:6:robot_set_all_motors	24	static
+../Core/Src/robot.c:138:6:robot_stop	16	static
+../Core/Src/robot.c:146:9:robot_get_motor_pwm	16	static
+../Core/Src/robot.c:162:13:parse_command	72	static
+../Core/Src/robot.c:275:6:robot_process_rx	24	static
+../Core/Src/robot.c:293:6:robot_loop	192	static

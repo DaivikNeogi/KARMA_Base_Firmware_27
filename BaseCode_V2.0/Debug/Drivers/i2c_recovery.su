@@ -1,0 +1,2 @@
+../Drivers/i2c_recovery.c:6:13:delay_us	24	static,ignoring_inline_asm
+../Drivers/i2c_recovery.c:15:6:i2c_bus_recovery_perform	48	static

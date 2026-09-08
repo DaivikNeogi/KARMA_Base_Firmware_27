@@ -1,0 +1,5 @@
+../Drivers/motor_driver.c:7:6:motor_driver_init	24	static
+../Drivers/motor_driver.c:20:6:motor_driver_set	32	static
+../Drivers/motor_driver.c:47:6:motor_driver_set_all	24	static
+../Drivers/motor_driver.c:55:6:motor_driver_stop_all	16	static
+../Drivers/motor_driver.c:62:9:motor_driver_get_speed	16	static

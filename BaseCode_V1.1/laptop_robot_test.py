@@ -6,7 +6,7 @@ Interactive Robot Test & Telemetry Dashboard for Autonomous 4-Wheel Bot.
 Communicates with STM32F411 over USB Virtual COM Port (CDC).
 
 Features:
-- Live JSON telemetry parsing: 3-Encoder Dead Wheel Odometry + BNO085 (x, y, z, yaw)
+- Live JSON telemetry parsing: 3-Encoder Dead Wheel Odometry + BNO085 (x, y, yaw, angular velocity)
 - Real-time command transmission (individual motor speeds, array formats, broadcast PWM)
 - Interactive WASD keyboard drive mode
 - Direct JSON command prompt
@@ -210,13 +210,14 @@ def run_dashboard(bridge):
                 e2 = telem.get("e2", telem.get("enc", {}).get("e2", 0))
                 e3 = telem.get("e3", telem.get("enc", {}).get("e3", 0))
 
-                bx = telem.get("x", telem.get("bno", {}).get("x", 0.0))
-                by = telem.get("y", telem.get("bno", {}).get("y", 0.0))
-                bz = telem.get("z", telem.get("bno", {}).get("z", 0.0))
-                yaw = telem.get("yaw", telem.get("bno", {}).get("yaw", 0.0))
-                bno_ok = telem.get("bno_ok", 0)
+                bx = telem.get("ax", telem.get("linear_acceleration_x", telem.get("x", 0.0)))
+                by = telem.get("ay", telem.get("linear_acceleration_y", telem.get("y", 0.0)))
+                gx = telem.get("wx", telem.get("angular_velocity_x", 0.0))
+                gy = telem.get("wy", telem.get("angular_velocity_y", 0.0))
+                yaw = telem.get("yaw", 0.0)
+                bno_ok = telem.get("ok", telem.get("bno_ok", 0))
 
-                bno_str = f"YAW:{yaw:6.2f}° | ACC:[X:{bx:5.2f} Y:{by:5.2f} Z:{bz:5.2f}]" if bno_ok else "BNO:[INITIALIZING/WAITING DATA]"
+                bno_str = f"YAW:{yaw:6.2f}° | ACC:[X:{bx:5.2f} Y:{by:5.2f}] | GYRO:[X:{gx:5.2f} Y:{gy:5.2f}]" if bno_ok else "BNO:[INITIALIZING/WAITING DATA]"
 
                 sys.stdout.write(
                     f"\rENC:[E1:{e1:6d}|E2:{e2:6d}|E3:{e3:6d}] | {bno_str} | SPD:{drive_speed:4d}  "
@@ -295,16 +296,23 @@ def main():
             elif opt == '2':
                 run_command_prompt(bridge)
             elif opt == '3':
-                print("\n[TEST] Running individual motor test sequence...")
+                print("\n[TEST] Running bidirectional individual motor test sequence...")
                 for m_idx in range(4):
-                    print(f" -> Spinning Motor {m_idx + 1} at +300 for 1.0s...")
+                    print(f" -> Spinning Motor {m_idx + 1} FORWARD (+300) for 1.2s...")
                     speeds = [0, 0, 0, 0]
                     speeds[m_idx] = 300
                     bridge.send_motor_speeds(*speeds)
-                    time.sleep(1.0)
+                    time.sleep(1.2)
                     bridge.send_stop()
-                    time.sleep(0.5)
-                print("[TEST] Motor sequence complete!")
+                    time.sleep(0.4)
+                    print(f" -> Spinning Motor {m_idx + 1} REVERSE (-300) for 1.2s...")
+                    speeds = [0, 0, 0, 0]
+                    speeds[m_idx] = -300
+                    bridge.send_motor_speeds(*speeds)
+                    time.sleep(1.2)
+                    bridge.send_stop()
+                    time.sleep(0.4)
+                print("[TEST] Bidirectional motor sequence complete!")
             elif opt == '4':
                 break
     finally:
