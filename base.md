@@ -22,7 +22,7 @@ The firmware underwent a five-stage evolutionary redesign:
 
 ---
 
-## Technical Specifications & Bill of Materials (BOM)
+## Technical Specifications
 
 ### System Specifications
 
@@ -32,9 +32,10 @@ The firmware underwent a five-stage evolutionary redesign:
 | **Companion Compute** | NVIDIA Jetson Orin Nano / NX | 6-core/8-core ARM Cortex-A78AE, 20–40 TOPS AI compute, USB 3.2 Gen 2. |
 | **RTOS Kernel** | FreeRTOS Kernel v202012.00 | Static allocation (`configSUPPORT_STATIC_ALLOCATION = 1`, zero heap). |
 | **Tick Timebase** | 1000 Hz ($1.0\text{ ms}$) | Generated via TIM1 / SysTick exception handler. |
-| **Actuation Bus** | 24.0 V DC Nominal (6S LiPo / LiFePO4) | Independent high-current power distribution board (PDB). |
-| **Logic Bus** | 5.0 V DC @ 5.0 A (Buck) $\to$ 3.3 V LDO | Powers MCU, optoisolators, logic buffers, and BNO085. |
-| **Motor Drivers** | 4x Cytron MD30C Rev 2.0 | NMOS H-Bridge, 5 V–30 V DC, 30 A continuous (80 A peak for 1 s). |
+| **Actuation Power Bus** | 24.0 V DC Nominal (6S LiPo / LiFePO4) | Independent high-current power distribution board (PDB). |
+| **Logic Power Bus** | 5.0 V DC @ 5.0 A (Buck) $\to$ 3.3 V LDO | Powers MCU, optoisolators, logic buffers, and BNO085. |
+| **Motor Drivers** | 4x Cytron MD30C Rev 2.0 | Full NMOS H-Bridge, 5 V–30 V DC, 30 A continuous (80 A peak for 1 s). |
+| **Drive Motors** | 4x High-Torque Brushed DC Motors | 24 V nominal, ~100–150 W continuous rating, geared output. |
 | **PWM Frequency** | 20.0 kHz | Ultrasonic switching; eliminates audible coil whine and reduces current ripple. |
 | **PWM Resolution** | 10-bit equivalent ($\text{ARR} = 999$, $\text{PSC} = 83$ @ 96 MHz) | Direct duty cycle scaling from 0 to 1000 ($0.0\%$ to $100.0\%$). |
 | **Hardware Deadman** | 150 ms Timeout | Dedicated check inside 100 Hz `MotorTask`; kills PWM on communication loss. |
@@ -44,17 +45,36 @@ The firmware underwent a five-stage evolutionary redesign:
 | **Tracking Resolution** | 4096 Counts/Rev (1024 CPR Optical, X4 Decode) | $k_s \approx 5.371 \times 10^{-5}\text{ m/tick}$ ($0.0537\text{ mm/count}$). |
 | **Telemetry Transport** | USB 2.0 Full Speed (12 Mbps PHY) | Virtual COM Port (CDC), 115200 baud nominal framing, 50 Hz rate. |
 
-### Bill of Materials (BOM)
+### Actuator & Motor Driver Specifications
 
-| Part Name | Manufacturer | Part Number | Package / Details | Qty | Designator |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| MCU Board | WeAct Studio | STM32F411CEU6 | 48-pin UFQFPN, 96 MHz Cortex-M4, USB-C | 1 | U1 |
-| Motor Driver | Cytron Technologies | MD30C Rev 2.0 | Single-channel brushed DC driver, 30 A | 4 | MD1–MD4 |
-| IMU Sensor | CEVA / Hillcrest | BNO085 | 28-pin LGA, Triaxial Gyro/Accel/Geomag | 1 | IMU1 |
-| Optical Encoders | Broadcom / Avago | HEDS-5540-A06 | 3-Channel optical incremental, 1024 CPR | 3 | ENC1–ENC3 |
-| Tracking Assembly | RoboManipal Custom | KARMA-DW-35 | 35 mm omni-wheel, dual ball bearing, sprung | 3 | DW1–DW3 |
-| Host Computer | NVIDIA | Jetson Orin Nano | 260-pin SO-DIMM, Carrier Board, ROS 2 | 1 | COMP1 |
-| DC-DC Converter | Pololu | D24V50F5 | Synchronous step-down, 24 V $\to$ 5 V @ 5 A | 1 | VR1 |
+| Subsystem Component | Specification Parameter | Concrete Value / Engineering Threshold |
+| :--- | :--- | :--- |
+| **Drive Motors (4x)** | Motor Type | Permanent Magnet Brushed DC Motors (PMDC) with integrated planetary reduction. |
+| | Rated Nominal Voltage | 24.0 V DC (Operating envelope: 18.0 V to 28.0 V DC). |
+| | Rated Mechanical Power | 100 W to 150 W per channel continuous output. |
+| | Stall Current per Motor | 25.0 A to 35.0 A @ 24.0 V DC. |
+| | No-Load Current | $\le 1.2\text{ A}$ per channel @ 24.0 V DC. |
+| | Mechanical Coupling | Direct axle coupling to 4 independent drive wheels on KARMA chassis. |
+| **Motor Drivers (Current)** | Driver Model | Cytron MD30C Rev 2.0 (Single-Channel H-Bridge). |
+| | Power MOSFET Architecture | Full N-Channel MOSFET H-Bridge (ultra-low $R_{DS(on)}$ for passive thermal dissipation). |
+| | Operating Voltage Range | 5.0 V DC to 30.0 V DC. |
+| | Continuous Output Current | 30.0 A continuous (ambient $25^\circ\text{C}$, natural convection, no external fan). |
+| | Peak Output Current | 80.0 A for $\le 1.0\text{ second}$ (inrush / high stall torque transient handling). |
+| | Logic Input Compatibility | 3.3 V and 5.0 V CMOS/TTL compatible (directly driven by STM32 3.3 V I/O). |
+| | Control Signaling Topology | Sign-Magnitude PWM: PWM pin sets duty cycle (speed); DIR pin sets polarity. |
+| | Switching Frequency Ceiling | Up to 20.0 kHz ultrasonic operation. |
+| | Dynamic Braking Mode | Low-side MOSFET regenerative braking when PWM $= 0$ or decelerating. |
+| | Form Factor & Dimensions | $111.0\text{ mm} \times 48.0\text{ mm}$ per unit (bulk footprint). |
+| **Motor Drivers (Next-Gen)** | Planned Driver Model | **Pololu Single-Channel 13A Motor Driver (e.g. G2 High-Power 24v13)**. |
+| | Validation Status | **Bench-tested & verified; excellent dynamic response and thermal performance.** |
+| | Operating Voltage Range | 6.5 V DC to 40.0 V DC (fully rated for 24.0 V nominal bus). |
+| | Continuous Output Current | 13.0 A continuous per channel (matches PMDC motor continuous draw of 5–8 A). |
+| | Peak Output Current | ~30.0 A transient peak handling. |
+| | Form Factor & Dimensions | **$33.0\text{ mm} \times 20.3\text{ mm}$** (~87% footprint reduction vs. MD30C). |
+| | Control Signaling Topology | Identical Sign-Magnitude PWM & DIR interface (100% firmware backward-compatible). |
+| **Safety Protections** | Duty Cycle Safety Ceiling | Software clamp (`MOTOR_MAX_PWM_LIMIT`) restricting duty cycle to $\le 50\%$ ARR. |
+| | Deadman Watchdog Cutoff | 150 ms timeout in 100 Hz `MotorTask`; commands all CCR registers to 0. |
+| | Direction Pin Redundancy | Motor 3 DIR driven on PB2, mirrored to PB10 and PB15 to bypass PCB trace fault. |
 
 ---
 
@@ -326,6 +346,43 @@ void motor_set(uint8_t motor_id, int16_t speed) {
 }
 ```
 
+### Actuator Drive Mechanics & MD30C Driver Operation
+
+#### Physical Motor Characteristics & Electrical Topology
+The KARMA base utilizes four high-power permanent magnet brushed DC (PMDC) drive motors coupled to planetary gear reduction boxes to drive the chassis:
+* **Operating Supply:** Direct 24.0 V DC feed from the primary power distribution board (PDB).
+* **Power & Current Envelope:** Each motor is rated for 100 W to 150 W continuous mechanical output, drawing ~1.2 A at no-load and up to 35.0 A peak under heavy acceleration or stall conditions.
+* **Chassis Actuation Mapping:** Four independently driven wheels configured in a differential / omnidirectional drive setup:
+  * Motor 1 ($M_1$): Front-Left drive assembly.
+  * Motor 2 ($M_2$): Front-Right drive assembly.
+  * Motor 3 ($M_3$): Rear-Left drive assembly.
+  * Motor 4 ($M_4$): Rear-Right drive assembly.
+
+#### Cytron MD30C H-Bridge Architecture
+Each motor is driven by a dedicated Cytron MD30C Rev 2.0 single-channel motor driver:
+* **Full NMOS Solid-State H-Bridge:** Built with discrete N-channel power MOSFETs that achieve ultra-low $R_{DS(on)}$ resistance, eliminating the severe $2\text{–}4\text{ V}$ voltage drops and massive thermal dissipation characteristic of legacy bipolar drivers (e.g. L298N). It supports 30 A continuous and 80 A peak current for up to 1 second.
+* **Sign-Magnitude Control Interface:**
+  * **PWM Input Pin:** Receives the 20 kHz PWM square wave from STM32 TIM5 (PA0..PA3). Duty cycle controls the effective average DC voltage applied across the motor terminals:
+    ```{math}
+    V_{\text{motor}} = D \times V_{\text{bus}} = \left( \frac{\text{CCR}}{\text{ARR}} \right) \times 24.0\text{ V}
+    ```
+  * **DIR Input Pin:** Driven by standard STM32 GPIO push-pull outputs (PB0, PB1, PB2, PB12). A digital HIGH (`GPIO_PIN_SET`) directs current from Terminal A to Terminal B; a digital LOW (`GPIO_PIN_RESET`) directs current from Terminal B to Terminal A.
+* **Optocoupler & Logic Compatibility:** The MD30C features onboard optoisolated inputs and logic level shifters supporting both 3.3 V and 5.0 V logic. The 3.3 V outputs from the STM32F411 drive the driver inputs directly with zero external level shifting.
+* **Dynamic Braking vs Coasting:** When PWM is driven to $0\%$ or commanded speed drops, the MD30C actively conducts through both low-side MOSFETs, shorting the motor terminals. This dissipates the kinetic energy via the motor's internal armature resistance and back-EMF, achieving fast dynamic braking rather than uncontrolled coasting.
+* **Opposite-Side Chassis Inversion:** Because drive motors on the left and right sides are mounted in 180° opposing physical orientations, identical forward rotation requires opposite electrical polarity. Firmware or wiring sense compensates to ensure all wheels drive forward under positive speed commands.
+
+#### Actuation Safety & Fault Protections
+1. **Software Duty Cycle Ceiling (`MOTOR_MAX_PWM_LIMIT`):** Clamps PWM compare registers to a maximum of $50\%$ of ARR, preventing excessive current draw during development and bench testing.
+2. **150 ms Deadman Safety Cutoff:** Evaluated every 10 ms inside `MotorTask`. If communication with the Jetson freezes or drops for longer than 150 ms, all four PWM outputs are immediately driven to $0\%$, halting the robot.
+3. **Hardware Direction Pin Mirroring:** For Motor 3, the firmware simultaneously drives PB2 (primary), PB10 (adjacent pin), and PB15 (legacy pin) to ensure electrical continuity across a damaged PCB trace.
+
+#### Planned Driver Miniaturization: Pololu Single-Channel 13A Drivers
+While the current revisions rely on the robust Cytron MD30C, future iterations of the KARMA base will transition to **Pololu Single-Channel 13A Motor Drivers** (e.g., G2 High-Power 24v13):
+* **Footprint Optimization:** The Cytron MD30C measures $111.0 \times 48.0\text{ mm}$ ($53.3\text{ cm}^2$ per board, totaling $>213\text{ cm}^2$ for 4 channels). The Pololu 13A driver occupies only $33.0 \times 20.3\text{ mm}$ ($6.7\text{ cm}^2$ per board), achieving an **~87% reduction in driver footprint** and major chassis weight savings.
+* **Current & Thermal Sufficiency:** The 24 V PMDC motors draw 5 A–8 A under continuous load and up to 25 A–35 A stall. The Pololu 13A continuous / 30 A peak rating fits the motor operational envelope with low thermal dissipation.
+* **Empirical Validation:** Bench testing of the Pololu 13A drivers has already been conducted under continuous load cycles, confirming stable thermal dissipation, linear PWM duty cycle response, and high reliability.
+* **Firmware Compatibility:** The Pololu module operates on the identical Sign-Magnitude PWM and DIR signaling paradigm (logic-level PWM + DIR), enabling a direct hardware swap with **zero firmware code modifications**.
+
 ### Sensor Acquisition Mechanisms
 
 #### Optical Quadrature Encoders (TIM4, TIM3, TIM2)
@@ -520,5 +577,6 @@ int8_t bno085_core_init(bno085_dev_t *dev, const hal_i2c_ops_t *bus_ops, uint16_
 
 ### Known Limitations & Planned Enhancements
 * **Open-Loop Wheel Velocity:** Current motor setpoints drive raw PWM duty cycles without closed-loop wheel velocity control on the drive motors. Future work will integrate drive motor encoders into high-rate PID/PI velocity loops in `MotorTask`.
+* **Motor Driver Miniaturization (Pololu 13A Drivers):** Current builds utilize bulky Cytron MD30C drivers ($111 \times 48\text{ mm}$ each). Future chassis revisions will migrate to ultra-compact **Pololu Single-Channel 13A Motor Drivers** ($33 \times 20\text{ mm}$), yielding an ~87% footprint reduction. Bench testing on the KARMA base testbed has verified excellent thermal dissipation, high power efficiency, and seamless drop-in compatibility with the existing Sign-Magnitude PWM/DIR firmware control scheme.
 * **CAN-FD Physical Transport Layer:** The USB CDC Virtual COM Port cable connection is susceptible to mechanical disconnection and electrical noise during high-acceleration arena runs. Future iterations will replace USB with an isolated CAN 2.0B / CAN-FD transceiver bus.
 * **Dynamic Odometry Covariance:** Current covariance matrices published in `/odom` and `/imu/data` are fixed constants. Future firmware will calculate dynamic covariance based on tracking wheel acceleration and surface contact load.
