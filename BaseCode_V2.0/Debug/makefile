@@ -9,8 +9,17 @@ RM := rm -rf
 
 # All of the sources participating in the build are defined here
 -include sources.mk
+-include tasks/subdir.mk
+-include state_machines/subdir.mk
 -include USB_DEVICE/Target/subdir.mk
 -include USB_DEVICE/App/subdir.mk
+-include ThirdParty/SEGGER/Segger/Syscalls/subdir.mk
+-include ThirdParty/SEGGER/Segger/subdir.mk
+-include ThirdParty/SEGGER/Rec/subdir.mk
+-include ThirdParty/SEGGER/OS/subdir.mk
+-include ThirdParty/SEGGER/Config/subdir.mk
+-include ThirdParty/FreeRTOS/Source/portable/GCC/ARM_CM4F/subdir.mk
+-include ThirdParty/FreeRTOS/Source/subdir.mk
 -include Middlewares/ST/STM32_USB_Device_Library/Core/Src/subdir.mk
 -include Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/subdir.mk
 -include Drivers/STM32F4xx_HAL_Driver/Src/subdir.mk

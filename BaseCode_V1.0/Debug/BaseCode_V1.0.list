@@ -4202,9 +4202,9 @@ static void MX_TIM5_Init(void)
  800231c:	4b3d      	ldr	r3, [pc, #244]	@ (8002414 <MX_TIM5_Init+0x128>)
  800231e:	4a3e      	ldr	r2, [pc, #248]	@ (8002418 <MX_TIM5_Init+0x12c>)
  8002320:	601a      	str	r2, [r3, #0]
-  htim5.Init.Prescaler = 83;
+  htim5.Init.Prescaler = 1;
  8002322:	4b3c      	ldr	r3, [pc, #240]	@ (8002414 <MX_TIM5_Init+0x128>)
- 8002324:	2253      	movs	r2, #83	@ 0x53
+ 8002324:	2201      	movs	r2, #1
  8002326:	605a      	str	r2, [r3, #4]
   htim5.Init.CounterMode = TIM_COUNTERMODE_UP;
  8002328:	4b3a      	ldr	r3, [pc, #232]	@ (8002414 <MX_TIM5_Init+0x128>)
@@ -5774,7 +5774,7 @@ void robot_loop(void) {
  8002d9c:	e92d 4ff0 	stmdb	sp!, {r4, r5, r6, r7, r8, r9, sl, fp, lr}
  8002da0:	b0a1      	sub	sp, #132	@ 0x84
  8002da2:	af10      	add	r7, sp, #64	@ 0x40
-  /* 1. Process pending BNO085 SHTP packets */
+//1. Process pending BNO085 SHTP packets//
   if (s_bno_ready) {
  8002da4:	4b7e      	ldr	r3, [pc, #504]	@ (8002fa0 <robot_loop+0x204>)
  8002da6:	781b      	ldrb	r3, [r3, #0]
@@ -5802,8 +5802,9 @@ void robot_loop(void) {
  8002dcc:	bf00      	nop
     }
 
-    /* If no sensor reports have arrived yet, re-send SetFeature requests every
-     * 250ms */
+     //If no sensor reports have arrived yet, re-send SetFeature requests every
+     //* 250ms
+
     if (s_bno.diag.rx_reports == 0 &&
  8002dce:	4b75      	ldr	r3, [pc, #468]	@ (8002fa4 <robot_loop+0x208>)
  8002dd0:	6f9b      	ldr	r3, [r3, #120]	@ 0x78
@@ -5909,7 +5910,8 @@ void robot_loop(void) {
  8002e84:	f7ff f868 	bl	8001f58 <encoder_get_count>
  8002e88:	62f8      	str	r0, [r7, #44]	@ 0x2c
 
-    /* Get BNO085 Heading (Yaw in degrees) */
+
+    //Get BNO085 Heading (Yaw in degrees)//
     BNO_Quaternion q;
     float yaw = 0.0f;
  8002e8a:	f04f 0300 	mov.w	r3, #0
@@ -5936,7 +5938,7 @@ void robot_loop(void) {
  8002ebe:	ed87 0a0e 	vstr	s0, [r7, #56]	@ 0x38
     }
 
-    /* Get BNO085 Acceleration (x, y, z in m/s^2) */
+    //Get BNO085 Acceleration (x, y, z in m/s^2)
     BNO_Vector3 accel = {0.0f, 0.0f, 0.0f};
  8002ec2:	f04f 0300 	mov.w	r3, #0
  8002ec6:	60fb      	str	r3, [r7, #12]
@@ -5960,6 +5962,7 @@ void robot_loop(void) {
  8002ef2:	482c      	ldr	r0, [pc, #176]	@ (8002fa4 <robot_loop+0x208>)
  8002ef4:	f7fe fe23 	bl	8001b3e <BNO085_GetAccel>
     }
+
 
     /* Clean, streamlined JSON telemetry with motor PWM */
     int len = snprintf(
@@ -6048,6 +6051,7 @@ void robot_loop(void) {
  8002f90:	f008 f96c 	bl	800b26c <CDC_Transmit_FS>
     }
   }
+}
  8002f94:	bf00      	nop
  8002f96:	3744      	adds	r7, #68	@ 0x44
  8002f98:	46bd      	mov	sp, r7

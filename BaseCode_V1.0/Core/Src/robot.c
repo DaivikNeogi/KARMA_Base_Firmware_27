@@ -283,15 +283,16 @@ void robot_process_rx(uint8_t *buf, uint32_t len) {
 static uint32_t s_last_feature_retry = 0;
 
 void robot_loop(void) {
-  /* 1. Process pending BNO085 SHTP packets */
+//1. Process pending BNO085 SHTP packets//
   if (s_bno_ready) {
     for (int i = 0; i < 8; i++) {
       if (BNO085_Update(&s_bno) != BNO_PORT_OK)
         break;
     }
 
-    /* If no sensor reports have arrived yet, re-send SetFeature requests every
-     * 250ms */
+     //If no sensor reports have arrived yet, re-send SetFeature requests every
+     //* 250ms
+
     if (s_bno.diag.rx_reports == 0 &&
         (HAL_GetTick() - s_last_feature_retry >= 250)) {
       s_last_feature_retry = HAL_GetTick();
@@ -329,18 +330,20 @@ void robot_loop(void) {
     int32_t e2 = encoder_get_count(1);
     int32_t e3 = encoder_get_count(2);
 
-    /* Get BNO085 Heading (Yaw in degrees) */
+
+    //Get BNO085 Heading (Yaw in degrees)//
     BNO_Quaternion q;
     float yaw = 0.0f;
     if (BNO085_GetGameRotation(&s_bno, &q) || BNO085_GetRotation(&s_bno, &q)) {
       yaw = BNO085_GetEulerYaw(&q);
     }
 
-    /* Get BNO085 Acceleration (x, y, z in m/s^2) */
+    //Get BNO085 Acceleration (x, y, z in m/s^2)
     BNO_Vector3 accel = {0.0f, 0.0f, 0.0f};
     if (!BNO085_GetLinearAccel(&s_bno, &accel)) {
       BNO085_GetAccel(&s_bno, &accel);
     }
+
 
     /* Clean, streamlined JSON telemetry with motor PWM */
     int len = snprintf(

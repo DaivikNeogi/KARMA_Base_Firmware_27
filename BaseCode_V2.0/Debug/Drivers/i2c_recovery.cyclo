@@ -1,2 +1,0 @@
-../Drivers/i2c_recovery.c:6:13:delay_us	2
-../Drivers/i2c_recovery.c:15:6:i2c_bus_recovery_perform	3

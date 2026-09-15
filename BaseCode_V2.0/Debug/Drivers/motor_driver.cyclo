@@ -1,5 +1,0 @@
-../Drivers/motor_driver.c:7:6:motor_driver_init	3
-../Drivers/motor_driver.c:20:6:motor_driver_set	10
-../Drivers/motor_driver.c:47:6:motor_driver_set_all	3
-../Drivers/motor_driver.c:55:6:motor_driver_stop_all	2
-../Drivers/motor_driver.c:62:9:motor_driver_get_speed	2

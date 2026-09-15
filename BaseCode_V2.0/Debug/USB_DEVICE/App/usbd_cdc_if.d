@@ -51,7 +51,7 @@ USB_DEVICE/App/usbd_cdc_if.o: ../USB_DEVICE/App/usbd_cdc_if.c \
  ../ThirdParty/FreeRTOS/Source/include/list.h \
  ../ThirdParty/FreeRTOS/Source/include/semphr.h \
  ../ThirdParty/FreeRTOS/Source/include/queue.h ../tasks/task_manager.h \
- ../ThirdParty/FreeRTOS/Source/include/task.h ../algorithm.h \
+ ../ThirdParty/FreeRTOS/Source/include/task.h ../Core/Inc/algorithm.h \
  ../drivers/hw_encoders.h ../drivers/motor_driver.h ../drivers/bno085.h
 ../USB_DEVICE/App/usbd_cdc_if.h:
 ../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc/usbd_cdc.h:
@@ -108,7 +108,7 @@ USB_DEVICE/App/usbd_cdc_if.o: ../USB_DEVICE/App/usbd_cdc_if.c \
 ../ThirdParty/FreeRTOS/Source/include/queue.h:
 ../tasks/task_manager.h:
 ../ThirdParty/FreeRTOS/Source/include/task.h:
-../algorithm.h:
+../Core/Inc/algorithm.h:
 ../drivers/hw_encoders.h:
 ../drivers/motor_driver.h:
 ../drivers/bno085.h:

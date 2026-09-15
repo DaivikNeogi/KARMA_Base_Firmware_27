@@ -1,4 +1,0 @@
-../Drivers/bno085.c:11:6:bno085_hw_init	1
-../Drivers/bno085.c:16:6:bno085_hw_step	9
-../Drivers/bno085.c:46:6:bno085_hw_get_reading	2
-../Drivers/bno085.c:52:6:bno085_hw_is_ready	1

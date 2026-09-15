@@ -1,5 +1,0 @@
-../Drivers/hw_encoders.c:8:6:hw_encoders_init	32	static
-../Drivers/hw_encoders.c:26:6:hw_encoders_update	16	static
-../Drivers/hw_encoders.c:45:9:hw_encoders_get_delta	16	static
-../Drivers/hw_encoders.c:53:9:hw_encoders_get_total	16	static
-../Drivers/hw_encoders.c:61:6:hw_encoders_get_all	24	static

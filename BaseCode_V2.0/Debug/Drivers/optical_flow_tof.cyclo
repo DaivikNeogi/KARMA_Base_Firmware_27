@@ -1,2 +1,0 @@
-../Drivers/optical_flow_tof.c:26:6:optical_flow_tof_init	1
-../Drivers/optical_flow_tof.c:27:6:optical_flow_tof_read	1

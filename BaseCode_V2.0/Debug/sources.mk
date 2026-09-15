@@ -28,6 +28,15 @@ Drivers/STM32F4xx_HAL_Driver/Src \
 Drivers \
 Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src \
 Middlewares/ST/STM32_USB_Device_Library/Core/Src \
+ThirdParty/FreeRTOS/Source \
+ThirdParty/FreeRTOS/Source/portable/GCC/ARM_CM4F \
+ThirdParty/SEGGER/Config \
+ThirdParty/SEGGER/OS \
+ThirdParty/SEGGER/Rec \
+ThirdParty/SEGGER/Segger \
+ThirdParty/SEGGER/Segger/Syscalls \
 USB_DEVICE/App \
 USB_DEVICE/Target \
+state_machines \
+tasks \
 
